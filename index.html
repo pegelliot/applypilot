@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f7f3ea">
+  <meta name="theme-color" content="#eef3f8">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="ApplyPilot">
   <title>ApplyPilot</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon-apple.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icon-apple.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -20,17 +21,18 @@
         <p class="eyebrow">Targeted job search</p>
         <h1>ApplyPilot</h1>
       </div>
-      <button class="icon-button" id="backupButton" type="button" aria-label="Export backup" title="Export backup">⇩</button>
+      <button class="icon-button text-icon" id="backupButton" type="button" aria-label="Export backup" title="Export backup">Save</button>
     </header>
 
     <main id="app" class="app-main" aria-live="polite"></main>
 
     <nav class="tabbar" aria-label="Main sections">
-      <button class="tab is-active" data-view="dashboard" type="button"><span>⌂</span><b>Home</b></button>
-      <button class="tab" data-view="jobs" type="button"><span>▣</span><b>Jobs</b></button>
-      <button class="tab" data-view="contacts" type="button"><span>◎</span><b>Network</b></button>
-      <button class="tab" data-view="assistant" type="button"><span>✦</span><b>Drafts</b></button>
-      <button class="tab" data-view="settings" type="button"><span>≡</span><b>More</b></button>
+      <button class="tab is-active" data-view="dashboard" type="button"><span>Home</span></button>
+      <button class="tab" data-view="jobs" type="button"><span>Jobs</span></button>
+      <button class="tab" data-view="contacts" type="button"><span>Network</span></button>
+      <button class="tab" data-view="assistant" type="button"><span>Create</span></button>
+      <button class="tab" data-view="interviews" type="button"><span>Interview</span></button>
+      <button class="tab" data-view="settings" type="button"><span>More</span></button>
     </nav>
   </div>
 
@@ -38,7 +40,7 @@
     <form method="dialog" class="dialog-card" id="editorForm">
       <div class="dialog-header">
         <h2 id="dialogTitle">Edit</h2>
-        <button class="icon-button" value="cancel" type="submit" aria-label="Close">×</button>
+        <button class="icon-button" value="cancel" type="submit" aria-label="Close">X</button>
       </div>
       <div id="dialogFields" class="dialog-fields"></div>
       <div class="dialog-actions">
@@ -49,6 +51,7 @@
   </dialog>
 
   <input id="importFile" type="file" accept="application/json" hidden>
+  <input id="resumeFile" type="file" accept=".txt,.md,.rtf,.doc,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
   <script src="app.js" defer></script>
 </body>
 </html>

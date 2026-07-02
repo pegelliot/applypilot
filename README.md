@@ -30,3 +30,12 @@ http://localhost:8080
 ## Data
 
 Data is saved in the browser with `localStorage`. Use Export in the app to keep a backup before clearing browser data or moving devices.
+
+## Current Features
+
+- Job, company, contact, and interview tracking
+- Create Documents for tailored resume notes, cover letters, LinkedIn messages, follow-up emails, and interview prep
+- Master Resume upload for text, markdown, and RTF files
+- Estimated fit scores based on job-description keywords and Master Resume text
+- Optional browser notifications when iPhone/Safari supports them
+- Export/import backup

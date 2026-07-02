@@ -1,15 +1,15 @@
 :root {
   color-scheme: light;
-  --ink: #202226;
-  --muted: #6f7280;
-  --line: #dad4c8;
-  --paper: #fffaf0;
+  --ink: #172033;
+  --muted: #687083;
+  --line: #d9e0ea;
+  --paper: #eef3f8;
   --surface: #ffffff;
-  --blue: #315f9f;
-  --green: #2f7a5f;
-  --rose: #a24758;
-  --gold: #a96f1b;
-  --shadow: 0 12px 30px rgba(49, 42, 33, 0.12);
+  --blue: #2457a6;
+  --green: #21765a;
+  --rose: #b0445d;
+  --gold: #9a6a16;
+  --shadow: 0 14px 36px rgba(23, 32, 51, 0.11);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -22,8 +22,8 @@ body {
   min-height: 100vh;
   color: var(--ink);
   background:
-    linear-gradient(180deg, rgba(255, 250, 240, 0.95), rgba(238, 244, 248, 0.95)),
-    radial-gradient(circle at top left, rgba(47, 122, 95, 0.16), transparent 32rem);
+    linear-gradient(180deg, rgba(238, 243, 248, 0.98), rgba(247, 249, 252, 0.98)),
+    radial-gradient(circle at top left, rgba(36, 87, 166, 0.12), transparent 30rem);
 }
 
 button,
@@ -52,7 +52,7 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 16px 18px 12px;
-  background: rgba(255, 250, 240, 0.92);
+  background: rgba(238, 243, 248, 0.92);
   backdrop-filter: blur(18px);
   border-bottom: 1px solid rgba(218, 212, 200, 0.82);
 }
@@ -105,8 +105,8 @@ h3 {
 .panel,
 .item,
 .draft-box {
-  background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(218, 212, 200, 0.92);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(217, 224, 234, 0.98);
   border-radius: 8px;
   box-shadow: var(--shadow);
 }
@@ -189,6 +189,15 @@ h3 {
   font-size: 0.78rem;
 }
 
+.info-strip {
+  padding: 12px 14px;
+  border: 1px solid rgba(36, 87, 166, 0.16);
+  border-radius: 8px;
+  color: #24446f;
+  background: rgba(36, 87, 166, 0.08);
+  line-height: 1.35;
+}
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;
@@ -226,8 +235,13 @@ h3 {
 .icon-button {
   width: 44px;
   color: var(--ink);
-  background: #ece7dd;
-  font-size: 1.25rem;
+  background: #e4ebf4;
+  font-size: 1rem;
+}
+
+.text-icon {
+  width: auto;
+  padding: 0 12px;
 }
 
 .toolbar {
@@ -261,11 +275,11 @@ h3 {
   bottom: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   width: min(760px, 100%);
   transform: translateX(-50%);
   padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(20px);
 }
@@ -279,19 +293,14 @@ h3 {
   background: transparent;
 }
 
-.tab span,
-.tab b {
+.tab span {
   display: block;
 }
 
 .tab span {
-  font-size: 1.15rem;
-  line-height: 1.2;
-}
-
-.tab b {
-  margin-top: 3px;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
+  line-height: 1.1;
+  font-weight: 800;
 }
 
 .tab.is-active {
@@ -315,6 +324,18 @@ dialog::backdrop {
 .dialog-card {
   padding: 14px;
   background: var(--paper);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.dialog-actions {
+  position: sticky;
+  bottom: -14px;
+  margin: 16px -14px -14px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(238, 243, 248, 0.96);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(14px);
 }
 
 .dialog-header,

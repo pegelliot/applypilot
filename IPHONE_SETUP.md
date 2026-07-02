@@ -19,13 +19,16 @@ Once hosted:
 - Job tracking
 - Company tracking
 - Networking contacts
+- Interview tracking
 - Documents and master resume notes
-- Local draft generation for fit reviews, resume suggestions, cover letters, LinkedIn messages, follow-ups, and interview prep
+- Master Resume upload for text, markdown, and RTF files
+- Create Documents for fit reviews, resume suggestions, cover letters, LinkedIn messages, follow-ups, and interview prep
 - Export/import backup
 - Offline-ready files after hosting over HTTPS
+- Optional browser notifications if your iPhone/Safari setup allows them
 
 ## Important
 
 Your data is saved in Safari on the device. Use Export regularly so you have a backup.
 
-This version does not connect to a real AI API yet. The Draft Assistant uses built-in templates and job-description keywords. A later version can connect to OpenAI or another AI provider.
+This version does not connect to a real AI API yet. Create Documents uses built-in templates, your Master Resume text, and job-description keywords. A later version can connect to OpenAI or another AI provider.

@@ -1,0 +1,18 @@
+{
+  "name": "ApplyPilot",
+  "short_name": "ApplyPilot",
+  "description": "A targeted job search tracker and application drafting workspace.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fffaf0",
+  "theme_color": "#f7f3ea",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

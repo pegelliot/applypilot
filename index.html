@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f3ea">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="ApplyPilot">
+  <title>ApplyPilot</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Targeted job search</p>
+        <h1>ApplyPilot</h1>
+      </div>
+      <button class="icon-button" id="backupButton" type="button" aria-label="Export backup" title="Export backup">⇩</button>
+    </header>
+
+    <main id="app" class="app-main" aria-live="polite"></main>
+
+    <nav class="tabbar" aria-label="Main sections">
+      <button class="tab is-active" data-view="dashboard" type="button"><span>⌂</span><b>Home</b></button>
+      <button class="tab" data-view="jobs" type="button"><span>▣</span><b>Jobs</b></button>
+      <button class="tab" data-view="contacts" type="button"><span>◎</span><b>Network</b></button>
+      <button class="tab" data-view="assistant" type="button"><span>✦</span><b>Drafts</b></button>
+      <button class="tab" data-view="settings" type="button"><span>≡</span><b>More</b></button>
+    </nav>
+  </div>
+
+  <dialog id="editorDialog">
+    <form method="dialog" class="dialog-card" id="editorForm">
+      <div class="dialog-header">
+        <h2 id="dialogTitle">Edit</h2>
+        <button class="icon-button" value="cancel" type="submit" aria-label="Close">×</button>
+      </div>
+      <div id="dialogFields" class="dialog-fields"></div>
+      <div class="dialog-actions">
+        <button class="secondary-button" value="cancel" type="submit">Cancel</button>
+        <button class="primary-button" id="saveDialogButton" value="default" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input id="importFile" type="file" accept="application/json" hidden>
+  <script src="app.js" defer></script>
+</body>
+</html>

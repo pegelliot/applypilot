@@ -474,6 +474,12 @@ textarea {
   resize: vertical;
 }
 
+.clear-field-button {
+  min-height: 38px;
+  justify-self: start;
+  padding: 8px 12px;
+}
+
 .draft-box {
   padding: 14px;
   white-space: pre-wrap;

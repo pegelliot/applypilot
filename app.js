@@ -1,8 +1,13 @@
 const STORAGE_KEY = "applyPilotWeb.v1";
+const SUPABASE_URL = "https://yjxnksqyegdhaqewjwzq.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_I0m_yKybpKfTL29-rtDbXw_4YN6R7DM";
 
 const state = loadState();
 let currentView = "dashboard";
 let latestDraft = null;
+let currentUser = null;
+let supabaseClient = null;
+let cloudSaveTimer = null;
 
 const app = document.querySelector("#app");
 const dialog = document.querySelector("#editorDialog");
@@ -56,6 +61,7 @@ if ("serviceWorker" in navigator) {
 }
 
 render();
+initSupabase();
 scheduleReminderChecks();
 
 function render() {
@@ -270,9 +276,36 @@ function renderMore() {
       </section>
       <section class="panel stack">
         <h2>Sign In</h2>
-        <p class="muted">This free GitHub Pages version saves data on your device. Real sign-in and syncing across devices needs a backend such as Firebase or Supabase.</p>
+        ${authPanel()}
       </section>
     </section>
+  `;
+}
+
+function authPanel() {
+  if (currentUser) {
+    return `
+      <p class="muted">Signed in as ${escapeHtml(currentUser.email || "your account")}. Changes save to this device and sync to Supabase.</p>
+      <div class="split-actions">
+        <button class="primary-button" data-action="sync-cloud" type="button">Sync now</button>
+        <button class="secondary-button" data-action="sign-out" type="button">Sign out</button>
+      </div>
+    `;
+  }
+
+  return `
+    <p class="muted">Sign in to sync ApplyPilot between your iPhone and Dell. If this is your first time, use Sign up.</p>
+    <label>Email
+      <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com">
+    </label>
+    <label>Password
+      <input id="authPassword" type="password" autocomplete="current-password" placeholder="At least 6 characters">
+    </label>
+    <div class="split-actions">
+      <button class="primary-button" data-action="sign-in" type="button">Sign in</button>
+      <button class="secondary-button" data-action="sign-up" type="button">Sign up</button>
+    </div>
+    <p class="muted">You may need to confirm your email before signing in, depending on your Supabase Auth settings.</p>
   `;
 }
 
@@ -304,6 +337,10 @@ function handleAction(action, id) {
     "upload-resume": () => resumeFile.click(),
     "recalculate-fit": recalculateFitScores,
     "enable-notifications": enableNotifications,
+    "sign-in": signIn,
+    "sign-up": signUp,
+    "sign-out": signOut,
+    "sync-cloud": syncToCloud,
     "export": exportBackup,
     "import": () => importFile.click()
   };
@@ -617,6 +654,113 @@ function loadState() {
   return normalizeState(seedState());
 }
 
+async function initSupabase() {
+  if (!window.supabase?.createClient) return;
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  const { data } = await supabaseClient.auth.getSession();
+  currentUser = data.session?.user || null;
+  if (currentUser) await loadCloudState();
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    if (currentUser) await loadCloudState();
+    render();
+  });
+  render();
+}
+
+async function signUp() {
+  const credentials = authCredentials();
+  if (!credentials) return;
+  const { error } = await supabaseClient.auth.signUp(credentials);
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  alert("Account created. Check your email if Supabase asks for confirmation, then sign in.");
+}
+
+async function signIn() {
+  const credentials = authCredentials();
+  if (!credentials) return;
+  const { data, error } = await supabaseClient.auth.signInWithPassword(credentials);
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  currentUser = data.user;
+  await loadCloudState();
+  render();
+}
+
+async function signOut() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  currentUser = null;
+  render();
+}
+
+function authCredentials() {
+  if (!supabaseClient) {
+    alert("Supabase is not loaded yet. Refresh and try again.");
+    return null;
+  }
+  const email = document.querySelector("#authEmail")?.value.trim();
+  const password = document.querySelector("#authPassword")?.value;
+  if (!email || !password) {
+    alert("Enter an email and password.");
+    return null;
+  }
+  return { email, password };
+}
+
+async function loadCloudState() {
+  if (!supabaseClient || !currentUser) return;
+  const { data, error } = await supabaseClient
+    .from("applypilot_workspaces")
+    .select("data")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+
+  if (error) {
+    alert(`Cloud load failed: ${error.message}`);
+    return;
+  }
+
+  if (data?.data) {
+    Object.assign(state, normalizeState(data.data));
+    saveStateLocalOnly();
+  } else {
+    await syncToCloud(false);
+  }
+}
+
+function queueCloudSave() {
+  if (!supabaseClient || !currentUser) return;
+  window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = window.setTimeout(() => syncToCloud(false), 700);
+}
+
+async function syncToCloud(showAlert = true) {
+  if (!supabaseClient || !currentUser) {
+    if (showAlert) alert("Sign in first.");
+    return;
+  }
+  const payload = {
+    user_id: currentUser.id,
+    data: normalizeState(state),
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await supabaseClient
+    .from("applypilot_workspaces")
+    .upsert(payload, { onConflict: "user_id" });
+
+  if (error) {
+    if (showAlert) alert(`Cloud sync failed: ${error.message}`);
+    return;
+  }
+  if (showAlert) alert("Synced to Supabase.");
+}
+
 function normalizeState(value) {
   return {
     jobs: Array.isArray(value.jobs) ? value.jobs : [],
@@ -629,6 +773,11 @@ function normalizeState(value) {
 }
 
 function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  queueCloudSave();
+}
+
+function saveStateLocalOnly() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 

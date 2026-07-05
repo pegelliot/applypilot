@@ -2,6 +2,7 @@ const STORAGE_KEY = "applyPilotWeb.v1";
 
 const state = loadState();
 let currentView = "dashboard";
+let latestDraft = null;
 
 const app = document.querySelector("#app");
 const dialog = document.querySelector("#editorDialog");
@@ -9,10 +10,13 @@ const dialogTitle = document.querySelector("#dialogTitle");
 const dialogFields = document.querySelector("#dialogFields");
 const editorForm = document.querySelector("#editorForm");
 const importFile = document.querySelector("#importFile");
+const resumeFile = document.querySelector("#resumeFile");
 
 const statuses = ["Saved", "Applying", "Applied", "Networking", "Interview", "Rejected", "Offer"];
 const contactStatuses = ["Target", "Requested", "Connected", "Messaged", "Replied"];
-const docKinds = ["Master Resume", "Tailored Resume", "Cover Letter", "Message Template", "Notes"];
+const docKinds = ["Master Resume", "Tailored Resume", "Cover Letter", "LinkedIn Message", "Follow-up Email", "Interview Prep", "Message Template", "Notes"];
+const interviewStatuses = ["Scheduled", "Completed", "Thank-you sent", "Follow-up needed", "Offer", "Closed"];
+const reminderWindowMs = 1000 * 60 * 60 * 24;
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
@@ -45,11 +49,14 @@ importFile.addEventListener("change", async () => {
   }
 });
 
+resumeFile.addEventListener("change", handleResumeUpload);
+
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js").catch(() => {});
 }
 
 render();
+scheduleReminderChecks();
 
 function render() {
   const views = {
@@ -57,6 +64,7 @@ function render() {
     jobs: renderJobs,
     contacts: renderNetwork,
     assistant: renderAssistant,
+    interviews: renderInterviews,
     settings: renderMore
   };
   app.innerHTML = views[currentView]();
@@ -65,35 +73,74 @@ function render() {
 
 function renderDashboard() {
   const activeJobs = state.jobs.filter((job) => !["Rejected", "Offer"].includes(job.status));
-  const interviews = state.jobs.filter((job) => job.status === "Interview").length;
+  const interviews = state.interviews.filter((interview) => !["Closed", "Offer"].includes(interview.status)).length;
   const avgFit = state.jobs.length ? Math.round(state.jobs.reduce((sum, job) => sum + Number(job.fitScore || 0), 0) / state.jobs.length) : 0;
-  const followUps = [...state.jobs]
-    .filter((job) => job.followUpDate)
-    .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate))
-    .slice(0, 4);
+  const appliedCount = state.jobs.filter((job) => ["Applied", "Networking", "Interview", "Offer", "Rejected"].includes(job.status)).length;
+  const followUpCount = upcomingReminders().filter((reminder) => ["job", "contact", "interview-followup"].includes(reminder.type)).length;
+  const connectionCount = state.contacts.filter((contact) => ["Connected", "Messaged", "Replied"].includes(contact.status)).length;
+  const followUps = upcomingReminders().slice(0, 5);
 
   return `
     <section class="stack">
       <div class="grid">
         ${metric("Active", activeJobs.length)}
+        ${metric("Applied", appliedCount)}
+        ${metric("Follow-ups", followUpCount)}
+        ${metric("Connections", connectionCount)}
         ${metric("Interviews", interviews)}
-        ${metric("Contacts", state.contacts.length)}
         ${metric("Avg fit", `${avgFit}%`)}
       </div>
+      <section class="panel stack">
+        <div class="toolbar">
+          <h2>Search Dashboard</h2>
+          <button class="secondary-button" data-action="recalculate-fit" type="button">Refresh scores</button>
+        </div>
+        ${dashboardBars()}
+      </section>
       <div class="wide-grid">
         <section class="panel stack">
           <div class="toolbar">
             <h2>Upcoming follow-ups</h2>
             <button class="primary-button" data-action="add-job" type="button">Add job</button>
           </div>
-          ${followUps.length ? followUps.map(jobItem).join("") : empty("No follow-ups yet. Add a follow-up date to a job you want to keep moving.")}
+          ${followUps.length ? followUps.map(reminderItem).join("") : empty("No follow-ups yet. Add a follow-up date or interview reminder.")}
         </section>
         <section class="panel stack">
-          <h2>Today’s focus</h2>
+          <h2>Today's focus</h2>
           ${focusList()}
         </section>
       </div>
     </section>
+  `;
+}
+
+function dashboardBars() {
+  const data = [
+    ["Jobs saved", state.jobs.length, state.jobs.length],
+    ["Applied", state.jobs.filter((job) => ["Applied", "Networking", "Interview", "Offer", "Rejected"].includes(job.status)).length, state.jobs.length],
+    ["Follow-ups set", upcomingReminders().filter((reminder) => ["job", "contact", "interview-followup"].includes(reminder.type)).length, Math.max(state.jobs.length + state.contacts.length, 1)],
+    ["Connections", state.contacts.filter((contact) => ["Connected", "Messaged", "Replied"].includes(contact.status)).length, Math.max(state.contacts.length, 1)],
+    ["Interviews", state.interviews.length, Math.max(state.jobs.length, 1)]
+  ];
+
+  return `
+    <div class="chart-list">
+      ${data.map(([label, value, max]) => {
+        const width = max ? Math.min(100, Math.round((value / max) * 100)) : 0;
+        return `
+          <div class="chart-row">
+            <div class="chart-label"><span>${escapeHtml(label)}</span><b>${value}</b></div>
+            <div class="bar-track"><div class="bar-fill" style="width: ${width}%"></div></div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div class="pipeline-grid">
+      ${statuses.map((status) => {
+        const count = state.jobs.filter((job) => job.status === status).length;
+        return `<div class="pipeline-pill"><span>${escapeHtml(status)}</span><b>${count}</b></div>`;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -103,6 +150,9 @@ function renderJobs() {
       <div class="toolbar">
         <h2>Jobs</h2>
         <button class="primary-button" data-action="add-job" type="button">Add job</button>
+      </div>
+      <div class="info-strip">
+        Fit score is an estimate based on job-description keywords, your saved Master Resume text, and role detail. It is not pulled from an employer or job board.
       </div>
       ${state.jobs.length ? state.jobs.map(jobItem).join("") : empty("Paste your first job description to score, tailor, and track it.")}
     </section>
@@ -126,13 +176,40 @@ function renderNetwork() {
   `;
 }
 
+function renderInterviews() {
+  const scheduled = state.interviews.filter((interview) => interview.status === "Scheduled").length;
+  const needsFollowUp = state.interviews.filter((interview) => interview.status === "Follow-up needed" || interview.followUpDate).length;
+  const thankYous = state.interviews.filter((interview) => interview.thankYouDate).length;
+
+  return `
+    <section class="stack">
+      <div class="interview-hero">
+        <div>
+          <p class="eyebrow">Track conversations</p>
+          <h2>Interview Tracker</h2>
+          <p class="muted">Keep interview dates, prep notes, questions, thank-you notes, and follow-ups in one place.</p>
+        </div>
+        <button class="primary-button" data-action="add-interview" type="button">Add interview</button>
+      </div>
+      <div class="grid">
+        ${metric("Scheduled", scheduled)}
+        ${metric("Follow-ups", needsFollowUp)}
+        ${metric("Thank-yous", thankYous)}
+        ${metric("Total", state.interviews.length)}
+      </div>
+      ${state.interviews.length ? state.interviews.map(interviewItem).join("") : empty("Track phone screens, recruiter calls, panel interviews, thank-you notes, and follow-ups.")}
+    </section>
+  `;
+}
+
 function renderAssistant() {
   const selectedJob = state.jobs[0];
   const selectedId = selectedJob?.id || "";
   return `
     <section class="stack">
       <div class="panel stack">
-        <h2>Draft Assistant</h2>
+        <h2>Create Documents</h2>
+        <p class="muted">Choose a job, then create tailored resume notes, cover letters, outreach messages, follow-ups, and interview prep. Save useful drafts into Documents.</p>
         <label>Job
           <select id="assistantJob">
             ${state.jobs.map((job) => `<option value="${job.id}" ${job.id === selectedId ? "selected" : ""}>${escapeHtml(job.company)}: ${escapeHtml(job.title)}</option>`).join("")}
@@ -148,7 +225,10 @@ function renderAssistant() {
             <option>Interview Prep</option>
           </select>
         </label>
-        <button class="primary-button" data-action="generate-draft" type="button">Generate draft</button>
+        <div class="split-actions">
+          <button class="primary-button" data-action="generate-draft" type="button">Generate</button>
+          <button class="secondary-button" data-action="save-draft" type="button">Save draft</button>
+        </div>
       </div>
       <div class="draft-box" id="draftOutput">${state.jobs.length ? "Choose a draft type and generate the next step." : "Add a job first, then drafts will appear here."}</div>
     </section>
@@ -162,7 +242,20 @@ function renderMore() {
         <h2>Documents</h2>
         <button class="primary-button" data-action="add-doc" type="button">Add doc</button>
       </div>
+      <section class="panel stack">
+        <h2>Master Resume</h2>
+        <p class="muted">Upload a text, markdown, or RTF resume to fill your Master Resume document. PDF and Word files can be stored as a reference, but paste the resume text too for better tailoring.</p>
+        <div class="split-actions">
+          <button class="primary-button" data-action="upload-resume" type="button">Upload resume</button>
+          <button class="secondary-button" data-action="recalculate-fit" type="button">Refresh fit scores</button>
+        </div>
+      </section>
       ${state.documents.length ? state.documents.map(docItem).join("") : empty("Store your master resume, tailored versions, cover letters, and notes.")}
+      <section class="panel stack">
+        <h2>Reminders</h2>
+        <p class="muted">Notifications depend on your iPhone/Safari settings. They work best after adding ApplyPilot to your Home Screen.</p>
+        <button class="primary-button" data-action="enable-notifications" type="button">Enable notifications</button>
+      </section>
       <section class="panel stack">
         <h2>Backup</h2>
         <p class="muted">Export your data before switching phones or clearing Safari data. Import restores a previous ApplyPilot backup.</p>
@@ -174,6 +267,10 @@ function renderMore() {
       <section class="panel stack">
         <h2>Home Screen</h2>
         <p class="muted">On iPhone, open this page in Safari, tap Share, then choose Add to Home Screen.</p>
+      </section>
+      <section class="panel stack">
+        <h2>Sign In</h2>
+        <p class="muted">This free GitHub Pages version saves data on your device. Real sign-in and syncing across devices needs a backend such as Firebase or Supabase.</p>
       </section>
     </section>
   `;
@@ -196,10 +293,17 @@ function handleAction(action, id) {
     "add-contact": () => openContactEditor(),
     "edit-contact": () => openContactEditor(state.contacts.find((contact) => contact.id === id)),
     "delete-contact": () => removeItem("contacts", id),
+    "add-interview": () => openInterviewEditor(),
+    "edit-interview": () => openInterviewEditor(state.interviews.find((interview) => interview.id === id)),
+    "delete-interview": () => removeItem("interviews", id),
     "add-doc": () => openDocEditor(),
     "edit-doc": () => openDocEditor(state.documents.find((doc) => doc.id === id)),
     "delete-doc": () => removeItem("documents", id),
     "generate-draft": generateDraft,
+    "save-draft": saveLatestDraft,
+    "upload-resume": () => resumeFile.click(),
+    "recalculate-fit": recalculateFitScores,
+    "enable-notifications": enableNotifications,
     "export": exportBackup,
     "import": () => importFile.click()
   };
@@ -207,20 +311,21 @@ function handleAction(action, id) {
 }
 
 function openJobEditor(job = {}) {
+  const profile = masterResumeText();
   openEditor(job.id ? "Edit job" : "Add job", [
     field("title", "Role title", job.title),
     field("company", "Company", job.company),
     field("location", "Location", job.location),
     field("jobLink", "Job link", job.jobLink, "url"),
     selectField("status", "Status", statuses, job.status || "Saved"),
-    field("fitScore", "Fit score", job.fitScore || estimatedFit(job.jobDescription), "number"),
+    field("fitScore", "Fit score", job.fitScore || estimatedFit(job.jobDescription, profile), "number"),
     field("dateFound", "Date found", job.dateFound || today(), "date"),
     field("dateApplied", "Date applied", job.dateApplied || "", "date"),
     field("followUpDate", "Follow-up date", job.followUpDate || "", "date"),
     textField("jobDescription", "Job description", job.jobDescription),
     textField("notes", "Notes", job.notes)
   ], (values) => {
-    const record = { ...job, ...values, fitScore: Number(values.fitScore || estimatedFit(values.jobDescription)), id: job.id || newId() };
+    const record = { ...job, ...values, fitScore: Number(values.fitScore || estimatedFit(values.jobDescription, profile)), id: job.id || newId() };
     upsert("jobs", record);
   });
 }
@@ -248,6 +353,24 @@ function openContactEditor(contact = {}) {
     field("followUpDate", "Follow-up date", contact.followUpDate || "", "date"),
     textField("notes", "Notes", contact.notes)
   ], (values) => upsert("contacts", { ...contact, ...values, id: contact.id || newId() }));
+}
+
+function openInterviewEditor(interview = {}) {
+  const jobOptions = state.jobs.map((job) => `${job.company}: ${job.title}`);
+  openEditor(interview.id ? "Edit interview" : "Add interview", [
+    field("company", "Company", interview.company),
+    field("role", "Role", interview.role),
+    field("interviewer", "Interviewer / panel", interview.interviewer),
+    selectField("status", "Status", interviewStatuses, interview.status || "Scheduled"),
+    field("date", "Interview date", interview.date || today(), "date"),
+    field("time", "Interview time", interview.time || "", "time"),
+    field("location", "Location or video link", interview.location),
+    field("thankYouDate", "Thank-you sent date", interview.thankYouDate || "", "date"),
+    field("followUpDate", "Follow-up date", interview.followUpDate || "", "date"),
+    textField("prepNotes", "Prep notes", interview.prepNotes),
+    textField("questions", "Questions to ask", interview.questions),
+    textField("notes", "Interview notes", interview.notes)
+  ], (values) => upsert("interviews", { ...interview, ...values, id: interview.id || newId() }));
 }
 
 function openDocEditor(doc = {}) {
@@ -292,7 +415,36 @@ function generateDraft() {
   const job = state.jobs.find((item) => item.id === document.querySelector("#assistantJob").value);
   const task = document.querySelector("#assistantTask").value;
   const profile = state.documents.find((doc) => doc.kind === "Master Resume")?.body || "";
-  document.querySelector("#draftOutput").textContent = draftFor(task, job, profile);
+  const body = draftFor(task, job, profile);
+  latestDraft = job ? { task, job, body } : null;
+  document.querySelector("#draftOutput").textContent = body;
+}
+
+function saveLatestDraft() {
+  if (!latestDraft) {
+    alert("Generate a draft first.");
+    return;
+  }
+  const kindMap = {
+    "Resume Suggestions": "Tailored Resume",
+    "Cover Letter": "Cover Letter",
+    "LinkedIn Message": "LinkedIn Message",
+    "Follow-up Email": "Follow-up Email",
+    "Interview Prep": "Interview Prep",
+    "Job Fit Review": "Notes"
+  };
+  state.documents.unshift({
+    id: newId(),
+    title: `${latestDraft.task} - ${latestDraft.job.company}`,
+    kind: kindMap[latestDraft.task] || "Notes",
+    relatedCompany: latestDraft.job.company,
+    relatedRole: latestDraft.job.title,
+    body: latestDraft.body,
+    updatedAt: new Date().toISOString()
+  });
+  saveState();
+  alert("Draft saved to Documents.");
+  render();
 }
 
 function draftFor(task, job, profile) {
@@ -316,7 +468,7 @@ function jobItem(job) {
       <div class="item-head">
         <div class="item-title">
           <strong>${escapeHtml(job.title)}</strong>
-          <span class="muted">${escapeHtml(job.company)}${job.location ? ` · ${escapeHtml(job.location)}` : ""}</span>
+          <span class="muted">${escapeHtml(job.company)}${job.location ? ` - ${escapeHtml(job.location)}` : ""}</span>
         </div>
         <span class="score${low}">${Number(job.fitScore || 0)}%</span>
       </div>
@@ -370,6 +522,41 @@ function contactItem(contact) {
   `;
 }
 
+function interviewItem(interview) {
+  return `
+    <article class="item">
+      <div class="item-head">
+        <div class="item-title">
+          <strong>${escapeHtml(interview.company || "Interview")}</strong>
+          <span class="muted">${escapeHtml(interview.role || "Role not set")}${interview.date ? ` - ${formatDate(interview.date)}` : ""}</span>
+        </div>
+        <span class="score">${escapeHtml(interview.status || "Scheduled")}</span>
+      </div>
+      <div class="chips">
+        ${interview.time ? `<span class="chip">${escapeHtml(interview.time)}</span>` : ""}
+        ${interview.followUpDate ? `<span class="chip">Follow up ${formatDate(interview.followUpDate)}</span>` : ""}
+      </div>
+      <p class="meta">${escapeHtml(truncate(interview.prepNotes || interview.questions || interview.notes || "No prep notes yet.", 130))}</p>
+      <div class="row-actions">
+        <button class="secondary-button" data-action="edit-interview" data-id="${interview.id}" type="button">Edit</button>
+        <button class="danger-button" data-action="delete-interview" data-id="${interview.id}" type="button">Delete</button>
+      </div>
+    </article>
+  `;
+}
+
+function reminderItem(reminder) {
+  return `
+    <article class="item">
+      <div class="item-title">
+        <strong>${escapeHtml(reminder.title)}</strong>
+        <span class="muted">${escapeHtml(reminder.detail)}</span>
+      </div>
+      <div class="chips"><span class="chip">${formatDate(reminder.date)}</span></div>
+    </article>
+  `;
+}
+
 function docItem(doc) {
   return `
     <article class="item">
@@ -389,8 +576,10 @@ function docItem(doc) {
 function focusList() {
   const suggestions = [];
   const networkingJob = state.jobs.find((job) => job.status === "Applied" || job.status === "Networking");
+  const nextInterview = state.interviews.find((interview) => interview.status === "Scheduled");
   if (networkingJob) suggestions.push(`Send one follow-up or LinkedIn message for ${networkingJob.company}.`);
-  if (!state.documents.some((doc) => doc.kind === "Master Resume")) suggestions.push("Paste your master resume into Documents.");
+  if (nextInterview) suggestions.push(`Prep for ${nextInterview.company} interview and save three questions to ask.`);
+  if (!state.documents.some((doc) => doc.kind === "Master Resume")) suggestions.push("Upload or paste your master resume into Documents.");
   if (state.contacts.length < state.companies.length) suggestions.push("Add one contact for a target company.");
   if (!suggestions.length) suggestions.push("Review high-fit jobs and pick the next application to tailor.");
   return suggestions.map((item) => `<article class="item"><p>${escapeHtml(item)}</p></article>`).join("");
@@ -433,12 +622,62 @@ function normalizeState(value) {
     jobs: Array.isArray(value.jobs) ? value.jobs : [],
     companies: Array.isArray(value.companies) ? value.companies : [],
     contacts: Array.isArray(value.contacts) ? value.contacts : [],
-    documents: Array.isArray(value.documents) ? value.documents : []
+    interviews: Array.isArray(value.interviews) ? value.interviews : [],
+    documents: Array.isArray(value.documents) ? value.documents : [],
+    settings: value.settings || { notificationsEnabled: false, notified: {} }
   };
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+async function handleResumeUpload() {
+  const file = resumeFile.files[0];
+  if (!file) return;
+
+  const lowerName = file.name.toLowerCase();
+  const textLike = lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".rtf") || file.type.startsWith("text/");
+  let body = "";
+
+  if (textLike) {
+    body = await file.text();
+  } else {
+    body = `Uploaded file: ${file.name}\n\nFor best resume tailoring, paste the text from this resume here. This web version can store the file name, but PDF and Word text extraction is limited without a larger document parser.`;
+  }
+
+  const existing = state.documents.find((doc) => doc.kind === "Master Resume");
+  const record = {
+    id: existing?.id || newId(),
+    title: "Master Resume",
+    kind: "Master Resume",
+    relatedCompany: "",
+    relatedRole: "",
+    body,
+    fileName: file.name,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (existing) Object.assign(existing, record);
+  else state.documents.unshift(record);
+
+  recalculateFitScores(false);
+  saveState();
+  resumeFile.value = "";
+  alert(textLike ? "Master Resume uploaded." : "Resume reference saved. Paste resume text into the Master Resume document for better tailoring.");
+  render();
+}
+
+function recalculateFitScores(showAlert = true) {
+  const profile = masterResumeText();
+  state.jobs.forEach((job) => {
+    job.fitScore = estimatedFit(job.jobDescription, profile);
+  });
+  saveState();
+  if (showAlert) {
+    alert("Fit scores refreshed.");
+    render();
+  }
 }
 
 function seedState() {
@@ -478,6 +717,21 @@ function seedState() {
       followUpDate: addDays(4),
       notes: "Commented on hiring post."
     }],
+    interviews: [{
+      id: newId(),
+      company: "Northstar Bio",
+      role: "Director, Patient Advocacy",
+      interviewer: "Recruiter screen",
+      status: "Scheduled",
+      date: addDays(6),
+      time: "10:00",
+      location: "Video call",
+      thankYouDate: "",
+      followUpDate: addDays(7),
+      prepNotes: "Prepare examples for advocacy strategy, stakeholder management, and cross-functional leadership.",
+      questions: "What would success look like in the first 90 days?",
+      notes: ""
+    }],
     documents: [{
       id: newId(),
       title: "Master Resume",
@@ -500,9 +754,98 @@ function exportBackup() {
   URL.revokeObjectURL(url);
 }
 
-function estimatedFit(description = "") {
-  const count = description.split(/\s+/).filter((word) => word.length > 6).length;
-  return Math.min(92, Math.max(55, 58 + Math.round(count / 7)));
+async function enableNotifications() {
+  if (!("Notification" in window)) {
+    alert("This browser does not support notifications.");
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  state.settings.notificationsEnabled = permission === "granted";
+  saveState();
+  alert(permission === "granted" ? "Notifications enabled. They work best from the Home Screen app." : "Notifications were not enabled.");
+  scheduleReminderChecks();
+}
+
+function scheduleReminderChecks() {
+  notifyDueReminders();
+  window.setInterval(notifyDueReminders, 1000 * 60 * 30);
+}
+
+function notifyDueReminders() {
+  if (!state.settings?.notificationsEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
+  const notified = state.settings.notified || {};
+  const due = upcomingReminders().filter((reminder) => {
+    const time = new Date(`${reminder.date}T12:00:00`).getTime();
+    const diff = time - Date.now();
+    return diff > -reminderWindowMs && diff < reminderWindowMs;
+  });
+
+  due.forEach((reminder) => {
+    const key = `${reminder.type}-${reminder.id}-${reminder.date}`;
+    if (notified[key]) return;
+    new Notification("ApplyPilot reminder", { body: `${reminder.title}: ${reminder.detail}` });
+    notified[key] = true;
+  });
+  state.settings.notified = notified;
+  saveState();
+}
+
+function upcomingReminders() {
+  const jobReminders = state.jobs
+    .filter((job) => job.followUpDate)
+    .map((job) => ({
+      id: job.id,
+      type: "job",
+      date: job.followUpDate,
+      title: `Follow up with ${job.company}`,
+      detail: job.title
+    }));
+  const contactReminders = state.contacts
+    .filter((contact) => contact.followUpDate)
+    .map((contact) => ({
+      id: contact.id,
+      type: "contact",
+      date: contact.followUpDate,
+      title: `Follow up with ${contact.name}`,
+      detail: contact.company || contact.role || "Networking contact"
+    }));
+  const interviewReminders = state.interviews
+    .filter((interview) => interview.date || interview.followUpDate)
+    .flatMap((interview) => {
+      const items = [];
+      if (interview.date) {
+        items.push({
+          id: interview.id,
+          type: "interview",
+          date: interview.date,
+          title: `Interview: ${interview.company}`,
+          detail: interview.role || interview.interviewer || "Scheduled interview"
+        });
+      }
+      if (interview.followUpDate) {
+        items.push({
+          id: interview.id,
+          type: "interview-followup",
+          date: interview.followUpDate,
+          title: `Interview follow-up: ${interview.company}`,
+          detail: interview.role || "Send follow-up"
+        });
+      }
+      return items;
+    });
+
+  return [...jobReminders, ...contactReminders, ...interviewReminders]
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function estimatedFit(description = "", profile = masterResumeText()) {
+  const jobKeywords = extractKeywords(description, 16);
+  const profileWords = new Set(tokenize(profile));
+  const overlap = jobKeywords.filter((word) => profileWords.has(word)).length;
+  const detailBoost = Math.min(14, Math.floor(tokenize(description).length / 18));
+  const resumeBoost = profile.trim().length > 80 ? Math.min(22, overlap * 4) : 0;
+  const hasProfilePenalty = profile.trim().length > 80 ? 0 : -8;
+  return Math.max(38, Math.min(96, 52 + detailBoost + resumeBoost + hasProfilePenalty));
 }
 
 function newId() {
@@ -510,14 +853,22 @@ function newId() {
   return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function extractKeywords(text = "") {
-  const words = text
+function masterResumeText() {
+  return state.documents.find((doc) => doc.kind === "Master Resume")?.body || "";
+}
+
+function tokenize(text = "") {
+  return text
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 6);
+    .filter((word) => word.length > 4 && !["their", "there", "about", "which", "would", "could", "should", "with", "from", "this", "that"].includes(word));
+}
+
+function extractKeywords(text = "", limit = 6) {
+  const words = tokenize(text).filter((word) => word.length > 6);
   const counts = words.reduce((map, word) => map.set(word, (map.get(word) || 0) + 1), new Map());
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([word]) => word);
-  return ranked.slice(0, 6).length ? ranked.slice(0, 6) : ["leadership", "strategy", "communication"];
+  return ranked.slice(0, limit).length ? ranked.slice(0, limit) : ["leadership", "strategy", "communication"];
 }
 
 function today() {

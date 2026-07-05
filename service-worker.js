@@ -1,4 +1,4 @@
-const CACHE_NAME = "applypilot-web-v2";
+const CACHE_NAME = "applypilot-web-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,7 +6,7 @@ const ASSETS = [
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg",
-  "./icon-apple.png"
+  "./apple-touch-icon.png"
 ];
 
 self.addEventListener("install", (event) => {

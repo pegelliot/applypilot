@@ -1,4 +1,4 @@
-const CACHE_NAME = "applypilot-web-v3";
+const CACHE_NAME = "applypilot-web-v4";
 const ASSETS = [
   "./",
   "./index.html",

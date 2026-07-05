@@ -40,3 +40,5 @@ Data is saved in the browser with `localStorage`. Use Export in the app to keep 
 - Optional browser notifications when iPhone/Safari supports them
 - Export/import backup
 - Supabase sign-in and cloud sync after running `supabase-setup.sql`
+
+- 

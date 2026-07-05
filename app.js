@@ -21,6 +21,13 @@ const statuses = ["Saved", "Applying", "Applied", "Networking", "Interview", "Re
 const contactStatuses = ["Target", "Requested", "Connected", "Messaged", "Replied"];
 const docKinds = ["Master Resume", "Tailored Resume", "Cover Letter", "LinkedIn Message", "Follow-up Email", "Interview Prep", "Message Template", "Notes"];
 const interviewStatuses = ["Availability requested", "Scheduled", "Completed", "Thank-you sent", "Follow-up needed", "Offer", "Closed"];
+const defaultDashboardGoals = {
+  savedWeekly: 10,
+  appliedWeekly: 5,
+  followUpsWeekly: 5,
+  connectionsWeekly: 5,
+  interviewsMonthly: 2
+};
 const reminderWindowMs = 1000 * 60 * 60 * 24;
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -99,7 +106,7 @@ function renderDashboard() {
       <section class="panel stack">
         <div class="toolbar">
           <h2>Search Dashboard</h2>
-          <button class="secondary-button" data-action="recalculate-fit" type="button">Refresh scores</button>
+          <button class="secondary-button" data-action="edit-goals" type="button">Edit goals</button>
         </div>
         ${dashboardBars()}
       </section>
@@ -121,21 +128,25 @@ function renderDashboard() {
 }
 
 function dashboardBars() {
+  const goals = dashboardGoals();
   const data = [
-    ["Jobs saved", state.jobs.length, state.jobs.length],
-    ["Applied", state.jobs.filter((job) => ["Applied", "Networking", "Interview", "Offer", "Rejected"].includes(job.status)).length, state.jobs.length],
-    ["Follow-ups set", upcomingReminders().filter((reminder) => ["job", "contact", "interview-followup"].includes(reminder.type)).length, Math.max(state.jobs.length + state.contacts.length, 1)],
-    ["Connections", state.contacts.filter((contact) => ["Connected", "Messaged", "Replied"].includes(contact.status)).length, Math.max(state.contacts.length, 1)],
-    ["Interviews", state.interviews.length, Math.max(state.jobs.length, 1)]
+    ["Jobs saved", "This week", countThisWeek(state.jobs, "dateFound"), goals.savedWeekly],
+    ["Applied", "This week", countAppliedThisWeek(), goals.appliedWeekly],
+    ["Follow-ups", "This week", upcomingReminders().filter((reminder) => isThisWeek(reminder.date)).length, goals.followUpsWeekly],
+    ["Connections", "This week", countConnectionsThisWeek(), goals.connectionsWeekly],
+    ["Interviews", "This month", state.interviews.filter((interview) => isThisMonth(interview.date)).length, goals.interviewsMonthly]
   ];
 
   return `
     <div class="chart-list">
-      ${data.map(([label, value, max]) => {
-        const width = max ? Math.min(100, Math.round((value / max) * 100)) : 0;
+      ${data.map(([label, period, value, target]) => {
+        const width = target ? Math.min(100, Math.round((value / target) * 100)) : 0;
         return `
           <div class="chart-row">
-            <div class="chart-label"><span>${escapeHtml(label)}</span><b>${value}</b></div>
+            <div class="chart-label">
+              <span>${escapeHtml(label)} <small>${escapeHtml(period)}</small></span>
+              <b>${value}/${target}</b>
+            </div>
             <div class="bar-track"><div class="bar-fill" style="width: ${width}%"></div></div>
           </div>
         `;
@@ -258,6 +269,14 @@ function renderMore() {
       </section>
       ${state.documents.length ? state.documents.map(docItem).join("") : empty("Store your master resume, tailored versions, cover letters, and notes.")}
       <section class="panel stack">
+        <h2>Dashboard Goals</h2>
+        <p class="muted">Set your weekly search pace for saved jobs, applications, follow-ups, and connections. Interviews use a monthly goal.</p>
+        <div class="goal-summary">
+          ${goalSummary()}
+        </div>
+        <button class="primary-button" data-action="edit-goals" type="button">Edit goals</button>
+      </section>
+      <section class="panel stack">
         <h2>Reminders</h2>
         <p class="muted">Notifications depend on your iPhone/Safari settings. They work best after adding ApplyPilot to your Home Screen.</p>
         <button class="primary-button" data-action="enable-notifications" type="button">Enable notifications</button>
@@ -336,6 +355,7 @@ function handleAction(action, id) {
     "save-draft": saveLatestDraft,
     "upload-resume": () => resumeFile.click(),
     "recalculate-fit": recalculateFitScores,
+    "edit-goals": () => openGoalEditor(),
     "enable-notifications": enableNotifications,
     "sign-in": signIn,
     "sign-up": signUp,
@@ -393,13 +413,12 @@ function openContactEditor(contact = {}) {
 }
 
 function openInterviewEditor(interview = {}) {
-  const jobOptions = state.jobs.map((job) => `${job.company}: ${job.title}`);
   openEditor(interview.id ? "Edit interview" : "Add interview", [
     field("company", "Company", interview.company),
     field("role", "Role", interview.role),
     field("interviewer", "Interviewer / panel", interview.interviewer),
-    selectField("status", "Status", interviewStatuses, interview.status || "Scheduled"),
-    field("date", "Interview date", interview.date || today(), "date"),
+    selectField("status", "Status", interviewStatuses, interview.status || "Availability requested"),
+    field("date", "Interview date (if scheduled)", interview.date || "", "date"),
     field("time", "Interview time", interview.time || "", "time"),
     field("location", "Location or video link", interview.location),
     field("thankYouDate", "Thank-you sent date", interview.thankYouDate || "", "date"),
@@ -408,6 +427,25 @@ function openInterviewEditor(interview = {}) {
     textField("questions", "Questions to ask", interview.questions),
     textField("notes", "Interview notes", interview.notes)
   ], (values) => upsert("interviews", { ...interview, ...values, id: interview.id || newId() }));
+}
+
+function openGoalEditor() {
+  const goals = dashboardGoals();
+  openEditor("Dashboard goals", [
+    field("savedWeekly", "Jobs saved per week", goals.savedWeekly, "number"),
+    field("appliedWeekly", "Applications per week", goals.appliedWeekly, "number"),
+    field("followUpsWeekly", "Follow-ups per week", goals.followUpsWeekly, "number"),
+    field("connectionsWeekly", "Connections per week", goals.connectionsWeekly, "number"),
+    field("interviewsMonthly", "Interviews per month", goals.interviewsMonthly, "number")
+  ], (values) => {
+    state.settings.dashboardGoals = {
+      savedWeekly: cleanGoal(values.savedWeekly),
+      appliedWeekly: cleanGoal(values.appliedWeekly),
+      followUpsWeekly: cleanGoal(values.followUpsWeekly),
+      connectionsWeekly: cleanGoal(values.connectionsWeekly),
+      interviewsMonthly: cleanGoal(values.interviewsMonthly)
+    };
+  });
 }
 
 function openDocEditor(doc = {}) {
@@ -638,6 +676,29 @@ function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
 }
 
+function goalSummary() {
+  const goals = dashboardGoals();
+  return [
+    ["Saved", `${goals.savedWeekly}/week`],
+    ["Applied", `${goals.appliedWeekly}/week`],
+    ["Follow-ups", `${goals.followUpsWeekly}/week`],
+    ["Connections", `${goals.connectionsWeekly}/week`],
+    ["Interviews", `${goals.interviewsMonthly}/month`]
+  ].map(([label, value]) => `<div class="pipeline-pill"><span>${label}</span><b>${value}</b></div>`).join("");
+}
+
+function dashboardGoals() {
+  return {
+    ...defaultDashboardGoals,
+    ...(state.settings?.dashboardGoals || {})
+  };
+}
+
+function cleanGoal(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 1;
+}
+
 function empty(message) {
   return `<div class="empty">${escapeHtml(message)}</div>`;
 }
@@ -762,13 +823,22 @@ async function syncToCloud(showAlert = true) {
 }
 
 function normalizeState(value) {
+  const settings = {
+    notificationsEnabled: false,
+    notified: {},
+    ...(value.settings || {})
+  };
+  settings.dashboardGoals = {
+    ...defaultDashboardGoals,
+    ...(settings.dashboardGoals || {})
+  };
   return {
     jobs: Array.isArray(value.jobs) ? value.jobs : [],
     companies: Array.isArray(value.companies) ? value.companies : [],
     contacts: Array.isArray(value.contacts) ? value.contacts : [],
     interviews: Array.isArray(value.interviews) ? value.interviews : [],
     documents: Array.isArray(value.documents) ? value.documents : [],
-    settings: value.settings || { notificationsEnabled: false, notified: {} }
+    settings
   };
 }
 
@@ -889,7 +959,12 @@ function seedState() {
       relatedRole: "",
       body: "Paste your master resume here.",
       updatedAt: new Date().toISOString()
-    }]
+    }],
+    settings: {
+      notificationsEnabled: false,
+      notified: {},
+      dashboardGoals: defaultDashboardGoals
+    }
   };
 }
 
@@ -985,6 +1060,45 @@ function upcomingReminders() {
 
   return [...jobReminders, ...contactReminders, ...interviewReminders]
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function countThisWeek(items, fieldName) {
+  return items.filter((item) => isThisWeek(item[fieldName])).length;
+}
+
+function countAppliedThisWeek() {
+  return state.jobs.filter((job) => isThisWeek(job.dateApplied)).length;
+}
+
+function countConnectionsThisWeek() {
+  return state.contacts.filter((contact) =>
+    ["Connected", "Messaged", "Replied"].includes(contact.status) && isThisWeek(contact.lastTouchDate)
+  ).length;
+}
+
+function isThisWeek(value) {
+  const date = parseLocalDate(value);
+  if (!date) return false;
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  const start = new Date(todayDate);
+  start.setDate(todayDate.getDate() - todayDate.getDay());
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return date >= start && date < end;
+}
+
+function isThisMonth(value) {
+  const date = parseLocalDate(value);
+  if (!date) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
+
+function parseLocalDate(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function estimatedFit(description = "", profile = masterResumeText()) {

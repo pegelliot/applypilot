@@ -2,6 +2,14 @@ const STORAGE_KEY = "applyPilotWeb.v1";
 const SUPABASE_URL = "https://yjxnksqyegdhaqewjwzq.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_I0m_yKybpKfTL29-rtDbXw_4YN6R7DM";
 
+const defaultDashboardGoals = {
+  savedWeekly: 10,
+  appliedWeekly: 5,
+  followUpsWeekly: 5,
+  connectionsWeekly: 5,
+  interviewsMonthly: 2
+};
+
 const state = loadState();
 let currentView = "dashboard";
 let latestDraft = null;
@@ -21,13 +29,6 @@ const statuses = ["Saved", "Applying", "Applied", "Networking", "Interview", "Re
 const contactStatuses = ["Target", "Requested", "Connected", "Messaged", "Replied"];
 const docKinds = ["Master Resume", "Tailored Resume", "Cover Letter", "LinkedIn Message", "Follow-up Email", "Interview Prep", "Message Template", "Notes"];
 const interviewStatuses = ["Availability requested", "Scheduled", "Completed", "Thank-you sent", "Follow-up needed", "Offer", "Closed"];
-const defaultDashboardGoals = {
-  savedWeekly: 10,
-  appliedWeekly: 5,
-  followUpsWeekly: 5,
-  connectionsWeekly: 5,
-  interviewsMonthly: 2
-};
 const reminderWindowMs = 1000 * 60 * 60 * 24;
 
 document.querySelectorAll(".tab").forEach((tab) => {

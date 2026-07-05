@@ -419,7 +419,7 @@ function openInterviewEditor(interview = {}) {
     field("role", "Role", interview.role),
     field("interviewer", "Interviewer / panel", interview.interviewer),
     selectField("status", "Status", interviewStatuses, interview.status || "Availability requested"),
-    field("date", "Interview date (if scheduled)", interview.date || "", "date"),
+    clearableDateField("date", "Interview date (if scheduled)", interview.date || ""),
     field("time", "Interview time", interview.time || "", "time"),
     field("location", "Location or video link", interview.location),
     field("thankYouDate", "Thank-you sent date", interview.thankYouDate || "", "date"),
@@ -462,6 +462,12 @@ function openDocEditor(doc = {}) {
 function openEditor(title, fields, onSave) {
   dialogTitle.textContent = title;
   dialogFields.innerHTML = fields.join("");
+  dialogFields.querySelectorAll("[data-clear-field]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = dialogFields.querySelector(`[name="${button.dataset.clearField}"]`);
+      if (input) input.value = "";
+    });
+  });
   editorForm.onsubmit = (event) => {
     if (event.submitter?.value === "cancel") return;
     event.preventDefault();
@@ -663,6 +669,15 @@ function focusList() {
 
 function field(name, labelText, value = "", type = "text") {
   return `<label>${labelText}<input name="${name}" type="${type}" value="${escapeAttr(value || "")}"></label>`;
+}
+
+function clearableDateField(name, labelText, value = "") {
+  return `
+    <label>${labelText}
+      <input name="${name}" type="date" value="${escapeAttr(value || "")}">
+      <button class="secondary-button clear-field-button" data-clear-field="${escapeAttr(name)}" type="button">Clear date</button>
+    </label>
+  `;
 }
 
 function textField(name, labelText, value = "") {

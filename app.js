@@ -20,7 +20,7 @@ const resumeFile = document.querySelector("#resumeFile");
 const statuses = ["Saved", "Applying", "Applied", "Networking", "Interview", "Rejected", "Offer"];
 const contactStatuses = ["Target", "Requested", "Connected", "Messaged", "Replied"];
 const docKinds = ["Master Resume", "Tailored Resume", "Cover Letter", "LinkedIn Message", "Follow-up Email", "Interview Prep", "Message Template", "Notes"];
-const interviewStatuses = ["Scheduled", "Completed", "Thank-you sent", "Follow-up needed", "Offer", "Closed"];
+const interviewStatuses = ["Availability requested", "Scheduled", "Completed", "Thank-you sent", "Follow-up needed", "Offer", "Closed"];
 const reminderWindowMs = 1000 * 60 * 60 * 24;
 
 document.querySelectorAll(".tab").forEach((tab) => {

@@ -93,10 +93,19 @@ function renderDashboard() {
   const followUpCount = upcomingReminders().filter((reminder) => ["job", "contact", "interview-followup"].includes(reminder.type)).length;
   const connectionCount = state.contacts.filter((contact) => ["Connected", "Messaged", "Replied"].includes(contact.status)).length;
   const followUps = upcomingReminders().slice(0, 5);
+  const nextStep = focusList();
 
   return `
     <section class="stack">
-      <div class="grid">
+      <section class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Command center</p>
+          <h2>Keep every application moving.</h2>
+          <p class="muted">Track targets, tailor documents, and follow up with a weekly pace you can actually see.</p>
+        </div>
+        <button class="primary-button" data-action="add-job" type="button">Add job</button>
+      </section>
+      <div class="grid metric-grid">
         ${metric("Active", activeJobs.length)}
         ${metric("Applied", appliedCount)}
         ${metric("Follow-ups", followUpCount)}
@@ -121,7 +130,7 @@ function renderDashboard() {
         </section>
         <section class="panel stack">
           <h2>Today's focus</h2>
-          ${focusList()}
+          ${nextStep}
         </section>
       </div>
     </section>

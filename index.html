@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#eef3f8">
+  <meta name="theme-color" content="#f6f8fb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="ApplyPilot">
@@ -17,22 +17,25 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div>
+      <div class="brand-lockup">
+        <div class="app-mark" aria-hidden="true">AP</div>
+        <div>
         <p class="eyebrow">Targeted job search</p>
         <h1>ApplyPilot</h1>
+        </div>
       </div>
-      <button class="icon-button text-icon" id="backupButton" type="button" aria-label="Export backup" title="Export backup">Save</button>
+      <button class="icon-button text-icon" id="backupButton" type="button" aria-label="Export backup" title="Export backup">Export</button>
     </header>
 
     <main id="app" class="app-main" aria-live="polite"></main>
 
     <nav class="tabbar" aria-label="Main sections">
-      <button class="tab is-active" data-view="dashboard" type="button"><span>Home</span></button>
-      <button class="tab" data-view="jobs" type="button"><span>Jobs</span></button>
-      <button class="tab" data-view="contacts" type="button"><span>Network</span></button>
-      <button class="tab" data-view="assistant" type="button"><span>Create</span></button>
-      <button class="tab" data-view="interviews" type="button"><span>Interviews</span></button>
-      <button class="tab" data-view="settings" type="button"><span>More</span></button>
+      <button class="tab is-active" data-view="dashboard" data-icon="H" type="button"><span>Home</span></button>
+      <button class="tab" data-view="jobs" data-icon="J" type="button"><span>Jobs</span></button>
+      <button class="tab" data-view="contacts" data-icon="N" type="button"><span>Network</span></button>
+      <button class="tab" data-view="assistant" data-icon="D" type="button"><span>Create</span></button>
+      <button class="tab" data-view="interviews" data-icon="I" type="button"><span>Interviews</span></button>
+      <button class="tab" data-view="settings" data-icon="M" type="button"><span>More</span></button>
     </nav>
   </div>
 

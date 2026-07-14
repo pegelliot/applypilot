@@ -90,9 +90,9 @@ function renderDashboard() {
   const interviews = state.interviews.filter((interview) => !["Closed", "Offer"].includes(interview.status)).length;
   const avgFit = state.jobs.length ? Math.round(state.jobs.reduce((sum, job) => sum + Number(job.fitScore || 0), 0) / state.jobs.length) : 0;
   const appliedCount = state.jobs.filter((job) => ["Applied", "Networking", "Interview", "Offer", "Rejected"].includes(job.status)).length;
-  const followUpCount = upcomingReminders().filter((reminder) => ["job", "contact", "interview-followup"].includes(reminder.type)).length;
+  const followUpCount = remindersByFilter("upcoming").filter((reminder) => ["job", "contact", "interview-followup"].includes(reminder.type)).length;
   const connectionCount = state.contacts.filter((contact) => ["Connected", "Messaged", "Replied"].includes(contact.status)).length;
-  const followUps = upcomingReminders().slice(0, 5);
+  const followUps = remindersByFilter(state.settings.followUpFilter).slice(0, 8);
   const nextStep = focusList();
 
   return `
@@ -123,16 +123,27 @@ function renderDashboard() {
       <div class="wide-grid">
         <section class="panel stack">
           <div class="toolbar">
-            <h2>Upcoming follow-ups</h2>
+            <h2>Follow-ups</h2>
             <button class="primary-button" data-action="add-job" type="button">Add job</button>
           </div>
-          ${followUps.length ? followUps.map(reminderItem).join("") : empty("No follow-ups yet. Add a follow-up date or interview reminder.")}
+          <div class="split-actions">
+            ${selectControl("followUpFilter", [["upcoming", "Upcoming"], ["past", "Past"], ["all", "All time"]], state.settings.followUpFilter || "upcoming")}
+            ${selectControl("followUpView", [["list", "List"], ["calendar", "Calendar"]], state.settings.followUpView || "list")}
+          </div>
+          ${followUps.length ? renderFollowUps(followUps) : empty("No follow-ups in this view. Add a follow-up date or change the filter.")}
         </section>
         <section class="panel stack">
           <h2>Today's focus</h2>
           ${nextStep}
         </section>
       </div>
+      <section class="panel stack">
+        <div class="toolbar">
+          <h2>Suggested Job Targets</h2>
+          <button class="secondary-button" data-action="add-job" type="button">Track one</button>
+        </div>
+        ${suggestedJobTargets()}
+      </section>
     </section>
   `;
 }
@@ -142,7 +153,7 @@ function dashboardBars() {
   const data = [
     ["Jobs saved", "This week", countThisWeek(state.jobs, "dateFound"), goals.savedWeekly],
     ["Applied", "This week", countAppliedThisWeek(), goals.appliedWeekly],
-    ["Follow-ups", "This week", upcomingReminders().filter((reminder) => isThisWeek(reminder.date)).length, goals.followUpsWeekly],
+    ["Follow-ups", "This week", remindersByFilter("upcoming").filter((reminder) => isThisWeek(reminder.date)).length, goals.followUpsWeekly],
     ["Connections", "This week", countConnectionsThisWeek(), goals.connectionsWeekly],
     ["Interviews", "This month", state.interviews.filter((interview) => isThisMonth(interview.date)).length, goals.interviewsMonthly]
   ];
@@ -256,6 +267,7 @@ function renderAssistant() {
           <button class="primary-button" data-action="generate-draft" type="button">Generate</button>
           <button class="secondary-button" data-action="save-draft" type="button">Save draft</button>
         </div>
+        <button class="secondary-button" data-action="apply-draft-resume" type="button">Import approved suggestions to resume</button>
       </div>
       <section class="panel stack">
         <h2>Revise Draft</h2>
@@ -282,9 +294,12 @@ function renderMore() {
       </div>
       <section class="panel stack">
         <h2>Master Resume</h2>
-        <p class="muted">Upload a text, markdown, or RTF resume to fill your Master Resume document. PDF and Word files can be stored as a reference, but paste the resume text too for better tailoring.</p>
+        <p class="muted">Text, markdown, and RTF files import automatically. PDF and Word uploads are saved as a reference, then you still need to paste resume text until document extraction is added.</p>
         <div class="split-actions">
           <button class="primary-button" data-action="upload-resume" type="button">Upload resume</button>
+          <button class="secondary-button" data-action="paste-resume" type="button">Paste resume text</button>
+        </div>
+        <div class="split-actions">
           <button class="secondary-button" data-action="recalculate-fit" type="button">Refresh fit scores</button>
         </div>
       </section>
@@ -321,6 +336,7 @@ function renderMore() {
       <section class="panel stack">
         <h2>Home Screen</h2>
         <p class="muted">On iPhone, open this page in Safari, tap Share, then choose Add to Home Screen.</p>
+        <p class="muted">Build v15</p>
       </section>
       <section class="panel stack">
         <h2>Sign In</h2>
@@ -361,6 +377,13 @@ function bindViewActions() {
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset.id));
   });
+  document.querySelectorAll("[data-setting]").forEach((control) => {
+    control.addEventListener("change", () => {
+      state.settings[control.dataset.setting] = control.value;
+      saveState();
+      render();
+    });
+  });
 }
 
 function handleAction(action, id) {
@@ -383,8 +406,10 @@ function handleAction(action, id) {
     "generate-draft": generateDraft,
     "revise-draft": reviseDraft,
     "copy-draft": copyLatestDraft,
+    "apply-draft-resume": applyDraftToResume,
     "save-draft": saveLatestDraft,
     "upload-resume": () => resumeFile.click(),
+    "paste-resume": () => openMasterResumeEditor(),
     "recalculate-fit": recalculateFitScores,
     "edit-profile": () => openProfileEditor(),
     "edit-goals": () => openGoalEditor(),
@@ -496,6 +521,15 @@ function openDocEditor(doc = {}) {
     field("relatedRole", "Related role", doc.relatedRole),
     textField("body", "Body", doc.body)
   ], (values) => upsert("documents", { ...doc, ...values, updatedAt: new Date().toISOString(), id: doc.id || newId() }));
+}
+
+function openMasterResumeEditor() {
+  const existing = state.documents.find((doc) => doc.kind === "Master Resume") || {};
+  openDocEditor({
+    ...existing,
+    title: existing.title || "Master Resume",
+    kind: "Master Resume"
+  });
 }
 
 function openEditor(title, fields, onSave) {
@@ -626,6 +660,44 @@ async function copyLatestDraft() {
   } catch {
     alert("Copy failed. Select the draft text and copy it manually.");
   }
+}
+
+function applyDraftToResume() {
+  if (!latestDraft) {
+    alert("Generate or revise a draft first.");
+    return;
+  }
+  if (!confirm("Add the current draft as approved tailoring notes inside your Master Resume document?")) return;
+
+  const existing = state.documents.find((doc) => doc.kind === "Master Resume");
+  const section = [
+    "",
+    "",
+    `Approved tailoring notes - ${latestDraft.job.company}: ${latestDraft.job.title}`,
+    `Draft type: ${latestDraft.task}`,
+    `Added: ${new Date().toLocaleDateString()}`,
+    "",
+    latestDraft.body
+  ].join("\n");
+
+  if (existing) {
+    existing.body = `${existing.body || ""}${section}`;
+    existing.updatedAt = new Date().toISOString();
+  } else {
+    state.documents.unshift({
+      id: newId(),
+      title: "Master Resume",
+      kind: "Master Resume",
+      relatedCompany: "",
+      relatedRole: "",
+      body: section.trim(),
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  saveState();
+  alert("Approved suggestions added to Master Resume.");
+  render();
 }
 
 function setDraftOutput(body) {
@@ -778,6 +850,31 @@ function reminderItem(reminder) {
   `;
 }
 
+function renderFollowUps(reminders) {
+  return state.settings.followUpView === "calendar" ? reminderCalendar(reminders) : reminders.map(reminderItem).join("");
+}
+
+function reminderCalendar(reminders) {
+  const grouped = reminders.reduce((map, reminder) => {
+    const key = reminder.date || "No date";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(reminder);
+    return map;
+  }, new Map());
+
+  return [...grouped.entries()].map(([date, items]) => `
+    <article class="item">
+      <div class="item-title">
+        <strong>${date === "No date" ? "No date" : formatDate(date)}</strong>
+        <span class="muted">${items.length} item${items.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="stack">
+        ${items.map((item) => `<p class="meta">${escapeHtml(item.title)} - ${escapeHtml(item.detail)}</p>`).join("")}
+      </div>
+    </article>
+  `).join("");
+}
+
 function docItem(doc) {
   return `
     <article class="item">
@@ -806,6 +903,43 @@ function focusList() {
   return suggestions.map((item) => `<article class="item"><p>${escapeHtml(item)}</p></article>`).join("");
 }
 
+function suggestedJobTargets() {
+  const profile = masterResumeText();
+  if (!profile.trim()) {
+    return empty("Upload or paste your Master Resume to get better suggested job targets.");
+  }
+
+  const keywordSource = `${profile} ${state.jobs.map((job) => `${job.title} ${job.jobDescription}`).join(" ")}`;
+  const keywords = extractKeywords(keywordSource, 18);
+  const existingTitles = new Set(state.jobs.map((job) => String(job.title || "").toLowerCase()));
+  const suggestions = [
+    ["Program Manager", ["strategy", "operations", "stakeholder", "cross", "planning"]],
+    ["Patient Advocacy Manager", ["patient", "advocacy", "healthcare", "partnerships", "external"]],
+    ["Customer Success Manager", ["relationships", "communication", "clients", "retention", "support"]],
+    ["Project Manager", ["timeline", "coordination", "execution", "planning", "priorities"]],
+    ["Communications Manager", ["messaging", "writing", "campaigns", "stakeholder", "communication"]],
+    ["Partnerships Manager", ["external", "partnerships", "relationship", "strategy", "engagement"]],
+    ["Operations Manager", ["operations", "process", "execution", "cross", "priorities"]]
+  ]
+    .map(([title, terms]) => ({
+      title,
+      score: terms.filter((term) => keywords.includes(term)).length
+    }))
+    .filter((item) => !existingTitles.has(item.title.toLowerCase()))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+
+  return suggestions.map((item) => `
+    <article class="item">
+      <div class="item-title">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span class="muted">Suggested from your resume and tracked job language</span>
+      </div>
+      <div class="chips"><span class="chip">${item.score ? "Strong signal" : "Explore"}</span></div>
+    </article>
+  `).join("");
+}
+
 function field(name, labelText, value = "", type = "text") {
   return `<label>${labelText}<input name="${name}" type="${type}" value="${escapeAttr(value || "")}"></label>`;
 }
@@ -825,6 +959,16 @@ function textField(name, labelText, value = "") {
 
 function selectField(name, labelText, options, selected) {
   return `<label>${labelText}<select name="${name}">${options.map((option) => `<option ${option === selected ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+}
+
+function selectControl(settingName, options, selected) {
+  return `
+    <label>${settingName === "followUpFilter" ? "Show" : "View"}
+      <select data-setting="${escapeAttr(settingName)}">
+        ${options.map(([value, label]) => `<option value="${escapeAttr(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+      </select>
+    </label>
+  `;
 }
 
 function metric(label, value) {
@@ -997,6 +1141,8 @@ function normalizeState(value) {
     notificationsEnabled: false,
     notified: {},
     applicantName: "",
+    followUpFilter: "upcoming",
+    followUpView: "list",
     ...(value.settings || {})
   };
   settings.dashboardGoals = {
@@ -1134,6 +1280,9 @@ function seedState() {
     settings: {
       notificationsEnabled: false,
       notified: {},
+      applicantName: "",
+      followUpFilter: "upcoming",
+      followUpView: "list",
       dashboardGoals: defaultDashboardGoals
     }
   };
@@ -1231,6 +1380,21 @@ function upcomingReminders() {
 
   return [...jobReminders, ...contactReminders, ...interviewReminders]
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function remindersByFilter(filter = "upcoming") {
+  const reminders = upcomingReminders();
+  if (filter === "past") return reminders.filter((reminder) => isPastDate(reminder.date)).reverse();
+  if (filter === "all") return reminders;
+  return reminders.filter((reminder) => !isPastDate(reminder.date));
+}
+
+function isPastDate(value) {
+  const date = parseLocalDate(value);
+  if (!date) return false;
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  return date < todayDate;
 }
 
 function countThisWeek(items, fieldName) {

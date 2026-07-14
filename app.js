@@ -257,6 +257,17 @@ function renderAssistant() {
           <button class="secondary-button" data-action="save-draft" type="button">Save draft</button>
         </div>
       </div>
+      <section class="panel stack">
+        <h2>Revise Draft</h2>
+        <p class="muted">After generating a draft, request changes and create another version.</p>
+        <label>Suggested changes
+          <textarea id="revisionRequest" placeholder="Example: Make this warmer, shorter, and add more emphasis on patient advocacy leadership."></textarea>
+        </label>
+        <div class="split-actions">
+          <button class="primary-button" data-action="revise-draft" type="button">Revise draft</button>
+          <button class="secondary-button" data-action="copy-draft" type="button">Copy draft</button>
+        </div>
+      </section>
       <div class="draft-box" id="draftOutput">${state.jobs.length ? "Choose a draft type and generate the next step." : "Add a job first, then drafts will appear here."}</div>
     </section>
   `;
@@ -278,6 +289,14 @@ function renderMore() {
         </div>
       </section>
       ${state.documents.length ? state.documents.map(docItem).join("") : empty("Store your master resume, tailored versions, cover letters, and notes.")}
+      <section class="panel stack">
+        <h2>Profile</h2>
+        <p class="muted">This name is used in cover letter and follow-up signatures.</p>
+        <div class="goal-summary">
+          <div class="pipeline-pill"><span>Name</span><b>${escapeHtml(applicantName())}</b></div>
+        </div>
+        <button class="primary-button" data-action="edit-profile" type="button">Edit profile</button>
+      </section>
       <section class="panel stack">
         <h2>Dashboard Goals</h2>
         <p class="muted">Set your weekly search pace for saved jobs, applications, follow-ups, and connections. Interviews use a monthly goal.</p>
@@ -362,9 +381,12 @@ function handleAction(action, id) {
     "edit-doc": () => openDocEditor(state.documents.find((doc) => doc.id === id)),
     "delete-doc": () => removeItem("documents", id),
     "generate-draft": generateDraft,
+    "revise-draft": reviseDraft,
+    "copy-draft": copyLatestDraft,
     "save-draft": saveLatestDraft,
     "upload-resume": () => resumeFile.click(),
     "recalculate-fit": recalculateFitScores,
+    "edit-profile": () => openProfileEditor(),
     "edit-goals": () => openGoalEditor(),
     "enable-notifications": enableNotifications,
     "sign-in": signIn,
@@ -458,6 +480,14 @@ function openGoalEditor() {
   });
 }
 
+function openProfileEditor() {
+  openEditor("Profile", [
+    field("applicantName", "Your name", state.settings.applicantName || applicantName())
+  ], (values) => {
+    state.settings.applicantName = String(values.applicantName || "").trim();
+  });
+}
+
 function openDocEditor(doc = {}) {
   openEditor(doc.id ? "Edit document" : "Add document", [
     field("title", "Title", doc.title),
@@ -520,11 +550,11 @@ async function generateDraft() {
   } catch (error) {
     body = `AI generation is not connected yet, so this is a local starter draft.\n\n${draftFor(task, job, profile)}\n\nSetup note: ${error.message}`;
   }
-  latestDraft = job ? { task, job, body } : null;
-  output.textContent = body;
+  latestDraft = job ? { task, job, body, versions: [body], version: 1 } : null;
+  setDraftOutput(body);
 }
 
-async function generateDraftWithAI(task, job, profile) {
+async function generateDraftWithAI(task, job, profile, revisionRequest = "", currentDraft = "") {
   if (!supabaseClient || !currentUser) {
     throw new Error("Sign in under More, then try Generate again.");
   }
@@ -532,6 +562,9 @@ async function generateDraftWithAI(task, job, profile) {
   const { data, error } = await supabaseClient.functions.invoke("generate-documents", {
     body: {
       task,
+      applicantName: applicantName(),
+      revisionRequest,
+      currentDraft,
       masterResume: profile,
       job: {
         title: job.title,
@@ -551,6 +584,59 @@ async function generateDraftWithAI(task, job, profile) {
     throw new Error(data?.error || "No AI draft came back.");
   }
   return data.body;
+}
+
+async function reviseDraft() {
+  if (!latestDraft) {
+    alert("Generate a draft first.");
+    return;
+  }
+
+  const revisionRequest = document.querySelector("#revisionRequest")?.value.trim();
+  if (!revisionRequest) {
+    alert("Type the changes you want first.");
+    return;
+  }
+
+  const profile = state.documents.find((doc) => doc.kind === "Master Resume")?.body || "";
+  const output = document.querySelector("#draftOutput");
+  output.textContent = "Creating revised version...";
+
+  let body = "";
+  try {
+    body = await generateDraftWithAI(latestDraft.task, latestDraft.job, profile, revisionRequest, latestDraft.body);
+  } catch (error) {
+    body = localRevision(latestDraft.body, revisionRequest, error.message);
+  }
+
+  latestDraft.versions.push(body);
+  latestDraft.version = latestDraft.versions.length;
+  latestDraft.body = body;
+  setDraftOutput(body);
+}
+
+async function copyLatestDraft() {
+  if (!latestDraft) {
+    alert("Generate a draft first.");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(latestDraft.body);
+    alert("Draft copied.");
+  } catch {
+    alert("Copy failed. Select the draft text and copy it manually.");
+  }
+}
+
+function setDraftOutput(body) {
+  const output = document.querySelector("#draftOutput");
+  if (!output) return;
+  const label = latestDraft?.version ? `Version ${latestDraft.version}` : "Draft";
+  output.textContent = `${label}\n\n${body}`;
+}
+
+function localRevision(currentDraft, revisionRequest, errorMessage) {
+  return `${currentDraft}\n\nRevision requested:\n${revisionRequest}\n\nAI revision is not connected yet, so ApplyPilot saved your requested change as a note.\n\nSetup note: ${errorMessage}`;
 }
 
 function saveLatestDraft() {
@@ -573,6 +659,7 @@ function saveLatestDraft() {
     relatedCompany: latestDraft.job.company,
     relatedRole: latestDraft.job.title,
     body: latestDraft.body,
+    versions: latestDraft.versions,
     updatedAt: new Date().toISOString()
   });
   saveState();
@@ -583,12 +670,13 @@ function saveLatestDraft() {
 function draftFor(task, job, profile) {
   if (!job) return "Add a job first.";
   const keywords = extractKeywords(job.jobDescription).join(", ");
+  const signatureName = applicantName();
   const drafts = {
     "Job Fit Review": `Recommended action: ${Number(job.fitScore) >= 75 ? "Apply and network" : "Review carefully before applying"}\n\nStrong matches to emphasize:\n- Leadership, communication, and cross-functional work that is already true in your background.\n- Posting language: ${keywords}.\n- Why ${job.company} fits your target search.\n\nCheck honestly:\n- Required credentials or direct experience you do not have.\n- Any salary, travel, location, or work arrangement concerns.\n\nNext step:\nTailor the resume summary and top bullets, then send one warm outreach message.`,
     "Resume Suggestions": `Suggested direction for ${job.title} at ${job.company}:\n\n1. Rewrite the headline toward the target role and strongest true specialty.\n2. Move the most relevant achievements into the top half of the resume.\n3. Mirror accurate keywords from the post: ${keywords}.\n4. Use measurable outcomes where you have them.\n5. Keep this honest: translate real experience, do not invent qualifications.\n\nMaster resume notes found:\n${profile || "No master resume pasted yet."}`,
-    "Cover Letter": `Dear Hiring Team,\n\nI am excited to apply for the ${job.title} role at ${job.company}. The opportunity stood out because it combines meaningful work, strategic execution, and clear communication.\n\nMy background has prepared me to manage complex priorities, build relationships, and translate goals into practical action. I was especially drawn to the role's focus on ${keywords}.\n\nI would welcome the opportunity to discuss how my experience can support your team.\n\nSincerely,`,
+    "Cover Letter": `Dear Hiring Team,\n\nI am excited to apply for the ${job.title} role at ${job.company}. The opportunity stood out because it combines meaningful work, strategic execution, and clear communication.\n\nMy background has prepared me to manage complex priorities, build relationships, and translate goals into practical action. I was especially drawn to the role's focus on ${keywords}.\n\nI would welcome the opportunity to discuss how my experience can support your team.\n\nSincerely,\n${signatureName}`,
     "LinkedIn Message": `Hi [Name], I saw the ${job.title} opening at ${job.company} and was drawn to the role's focus on ${keywords}. I am exploring roles where my background could be a strong fit and would be grateful to connect.`,
-    "Follow-up Email": `Subject: Following up on ${job.title} application\n\nHi [Name],\n\nI recently applied for the ${job.title} role at ${job.company} and wanted to briefly reiterate my interest. The opportunity aligns well with my experience in relationship building, communication, and strategic execution.\n\nI would be grateful for any update you are able to share and would welcome the chance to speak.\n\nBest,`,
+    "Follow-up Email": `Subject: Following up on ${job.title} application\n\nHi [Name],\n\nI recently applied for the ${job.title} role at ${job.company} and wanted to briefly reiterate my interest. The opportunity aligns well with my experience in relationship building, communication, and strategic execution.\n\nI would be grateful for any update you are able to share and would welcome the chance to speak.\n\nBest,\n${signatureName}`,
     "Interview Prep": `Interview prep for ${job.company}:\n\nPrepare examples for:\n- A time you influenced without authority.\n- A time you managed competing priorities.\n- A measurable result connected to ${keywords}.\n- Why this company and why this role now.\n\nQuestions to ask:\n- What would success look like in the first 90 days?\n- Which stakeholders are most important for this role?\n- What problem is the team most eager for this hire to solve?`
   };
   return drafts[task];
@@ -761,6 +849,21 @@ function dashboardGoals() {
   };
 }
 
+function applicantName() {
+  const savedName = String(state.settings?.applicantName || "").trim();
+  if (savedName) return savedName;
+
+  const firstResumeLine = masterResumeText().split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+  if (looksLikePersonName(firstResumeLine)) return firstResumeLine;
+
+  return currentUser?.email ? currentUser.email.split("@")[0] : "Your Name";
+}
+
+function looksLikePersonName(value) {
+  const words = value.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 4 && words.every((word) => /^[A-Za-z][A-Za-z'.-]*$/.test(word));
+}
+
 function cleanGoal(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 1;
@@ -893,6 +996,7 @@ function normalizeState(value) {
   const settings = {
     notificationsEnabled: false,
     notified: {},
+    applicantName: "",
     ...(value.settings || {})
   };
   settings.dashboardGoals = {

@@ -502,13 +502,55 @@ function removeItem(collection, id) {
   render();
 }
 
-function generateDraft() {
+async function generateDraft() {
   const job = state.jobs.find((item) => item.id === document.querySelector("#assistantJob").value);
   const task = document.querySelector("#assistantTask").value;
   const profile = state.documents.find((doc) => doc.kind === "Master Resume")?.body || "";
-  const body = draftFor(task, job, profile);
+  const output = document.querySelector("#draftOutput");
+  if (!job) {
+    output.textContent = "Add a job first.";
+    latestDraft = null;
+    return;
+  }
+
+  output.textContent = "Generating draft...";
+  let body = "";
+  try {
+    body = await generateDraftWithAI(task, job, profile);
+  } catch (error) {
+    body = `AI generation is not connected yet, so this is a local starter draft.\n\n${draftFor(task, job, profile)}\n\nSetup note: ${error.message}`;
+  }
   latestDraft = job ? { task, job, body } : null;
-  document.querySelector("#draftOutput").textContent = body;
+  output.textContent = body;
+}
+
+async function generateDraftWithAI(task, job, profile) {
+  if (!supabaseClient || !currentUser) {
+    throw new Error("Sign in under More, then try Generate again.");
+  }
+
+  const { data, error } = await supabaseClient.functions.invoke("generate-documents", {
+    body: {
+      task,
+      masterResume: profile,
+      job: {
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        jobDescription: job.jobDescription,
+        notes: job.notes,
+        fitScore: job.fitScore
+      }
+    }
+  });
+
+  if (error) {
+    throw new Error(error.message || "Supabase Edge Function failed.");
+  }
+  if (!data?.body) {
+    throw new Error(data?.error || "No AI draft came back.");
+  }
+  return data.body;
 }
 
 function saveLatestDraft() {
